@@ -1,0 +1,7 @@
+{
+    "dbname": "crypto_data",       // The name of your PostgreSQL database
+    "user": "your_username",      // The username to access the database
+    "password": "your_password",  // The password for the user
+    "host": "localhost",          // The host where PostgreSQL is running (usually localhost)
+    "port": "5432"                // The default port for PostgreSQL
+}
