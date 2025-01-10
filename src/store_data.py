@@ -1,4 +1,4 @@
-import requests
+import psycopg2
 import logging
 from dotenv import load_dotenv
 import os
@@ -9,7 +9,10 @@ load_dotenv()
 
 # Get QuestDB configuration from environment variables
 QUESTDB_HOST = os.getenv("QUESTDB_HOST", "localhost")
-QUESTDB_PORT = os.getenv("QUESTDB_PORT", "9000")
+QUESTDB_PORT = os.getenv("QUESTDB_PORT", "8812")  # Default port for PostgreSQL protocol
+QUESTDB_USER = os.getenv("QUESTDB_USER", "admin")  # Default user
+QUESTDB_PASSWORD = os.getenv("QUESTDB_PASSWORD", "quest")  # Default password
+QUESTDB_DB = os.getenv("QUESTDB_DB", "qdb")  # Default database
 
 # Configure logger
 logging.basicConfig(
@@ -20,36 +23,46 @@ logging.basicConfig(
 
 def insert_into_questdb(data):
     """
-    Inserts cryptocurrency data into QuestDB using the REST API.
+    Inserts cryptocurrency data into QuestDB using the PostgreSQL wire protocol.
     """
     try:
-        url = f"http://{QUESTDB_HOST}:{QUESTDB_PORT}/exec"
+        # Establish a connection to QuestDB
+        conn = psycopg2.connect(
+            host=QUESTDB_HOST,
+            port=QUESTDB_PORT,
+            user=QUESTDB_USER,
+            password=QUESTDB_PASSWORD,
+            database=QUESTDB_DB,
+        )
+        cursor = conn.cursor()
 
-        # Prepare SQL INSERT statement
-        sql_statements = []
+        # Prepare SQL INSERT statements
+        sql = """
+        INSERT INTO crypto_data (name, symbol, price, market_cap, volume_24h, percent_change_24h, timestamp)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """
+
+        # Insert each coin's data
         for coin in data:
-            sql = f"""
-            INSERT INTO crypto_data (name, symbol, price, market_cap, volume_24h, percent_change_24h, timestamp)
-            VALUES (
-                '{coin['name'].replace("'", "''")}',  -- Escape single quotes
-                '{coin['symbol'].replace("'", "''")}',
-                {coin['price']},
-                {coin['market_cap']},
-                {coin['volume_24h']},
-                {coin['percent_change_24h']},
-                CAST({coin['timestamp']} AS TIMESTAMP)
-            )
-            """
-            sql_statements.append(sql)
+            cursor.execute(sql, (
+                coin['name'],
+                coin['symbol'],
+                coin['price'],
+                coin['market_cap'],
+                coin['volume_24h'],
+                coin['percent_change_24h'],
+                time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime(coin['timestamp']/ 1e9))
+            ))
 
-        # Combine all SQL statements into one payload
-        payload = "; ".join(sql_statements)
+        # Commit the transaction
+        conn.commit()
+        print("Data inserted successfully into QuestDB via PostgreSQL wire protocol!")
+        logging.info("Data inserted successfully into QuestDB.")
 
-        # Send SQL query to QuestDB
-        response = requests.post(url, data={"query": payload})
-        if response.status_code == 200:
-            print("Data inserted successfully into QuestDB via REST API!")
-        else:
-            print(f"Failed to insert data: {response.text}")
+        # Close the cursor and connection
+        cursor.close()
+        conn.close()
+
     except Exception as e:
         print(f"Error while inserting data into QuestDB: {e}")
+        logging.error(f"Error while inserting data into QuestDB: {e}")
